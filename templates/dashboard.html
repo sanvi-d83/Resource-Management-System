@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard | ResourceFlow</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark small">RF</span><span>Resource<span class="brand-light">Flow</span></span></a>
+      <p class="nav-label">WORKSPACE</p>
+      <a class="nav-link active" href="{{ url_for('dashboard') }}"><span>▦</span> Overview</a>
+      <a class="nav-link" href="{{ url_for('settings') }}"><span>⚙</span> Admin settings</a>
+      <div class="sidebar-bottom">
+        <div class="user-chip"><div class="avatar">A</div><div><strong>{{ username }}</strong><small>Administrator</small></div></div>
+        <a class="nav-link logout" href="{{ url_for('logout') }}">↗ Sign out</a>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div><p class="eyebrow">RESOURCE MONITORING</p><h1>Building overview</h1></div>
+        <div class="top-actions"><span class="live-indicator"><i></i> Simulation running</span><span class="date-label" id="current-date"></span></div>
+      </header>
+
+      <section class="welcome-row">
+        <div><h2>Good day, {{ username }} <span>✦</span></h2><p class="muted">Here is the latest resource status across your buildings.</p></div>
+        <button class="btn secondary" id="simulate-now">↻ Generate reading</button>
+      </section>
+
+      <section class="stat-grid">
+        <article class="stat-card">
+          <div class="stat-top"><span class="stat-icon water-icon">≈</span><span class="stat-tag">WATER</span></div>
+          <p class="stat-label">Total available water</p><h2 id="total-water">—</h2><p class="stat-foot">Across all monitored buildings</p>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top"><span class="stat-icon power-icon">ϟ</span><span class="stat-tag">ELECTRICITY</span></div>
+          <p class="stat-label">Available electricity</p><h2 id="total-electricity">—</h2><p class="stat-foot">Across all monitored buildings</p>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top"><span class="stat-icon building-icon">▦</span><span class="stat-tag">BUILDINGS</span></div>
+          <p class="stat-label">Monitored buildings</p><h2 id="building-count">—</h2><p class="stat-foot">Connected to this dashboard</p>
+        </article>
+        <article class="stat-card">
+          <div class="stat-top"><span class="stat-icon alert-icon">!</span><span class="stat-tag">ATTENTION</span></div>
+          <p class="stat-label">Resources below limit</p><h2 id="low-count">—</h2><p class="stat-foot">Based on admin thresholds</p>
+        </article>
+      </section>
+
+      <section class="section-heading"><div><h2>Building resource status</h2><p class="muted">Current readings compared with admin-defined minimum limits.</p></div><span class="updated-label" id="last-updated">Waiting for data</span></section>
+      <section id="building-grid" class="building-grid"><div class="loading-card">Loading building data…</div></section>
+
+      <section class="content-grid">
+        <article class="panel chart-panel">
+          <div class="panel-heading"><div><h2>Resource history</h2><p class="muted">Recent simulated readings</p></div>
+            <div class="chart-controls">
+              <select id="chart-building" aria-label="Select building"></select>
+              <select id="chart-resource" aria-label="Select resource"><option>Water</option><option>Electricity</option></select>
+            </div>
+          </div>
+          <div class="chart-wrap"><canvas id="history-chart"></canvas></div>
+        </article>
+        <article class="panel alerts-panel">
+          <div class="panel-heading"><div><h2>Recent alerts</h2><p class="muted">Low-resource notifications</p></div><span class="alert-count" id="alert-count">0</span></div>
+          <div id="alerts-list" class="alerts-list"><p class="muted empty-state">No alerts recorded yet.</p></div>
+        </article>
+      </section>
+      <footer>ResourceFlow · Simulated monitoring demo · Data refreshes automatically</footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

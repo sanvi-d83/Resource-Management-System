@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin settings | ResourceFlow</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark small">RF</span><span>Resource<span class="brand-light">Flow</span></span></a>
+      <p class="nav-label">WORKSPACE</p>
+      <a class="nav-link" href="{{ url_for('dashboard') }}"><span>▦</span> Overview</a>
+      <a class="nav-link active" href="{{ url_for('settings') }}"><span>⚙</span> Admin settings</a>
+      <div class="sidebar-bottom">
+        <div class="user-chip"><div class="avatar">A</div><div><strong>{{ session.get('username', 'admin') }}</strong><small>Administrator</small></div></div>
+        <a class="nav-link logout" href="{{ url_for('logout') }}">↗ Sign out</a>
+      </div>
+    </aside>
+    <main class="main-content">
+      <header class="topbar"><div><p class="eyebrow">CONFIGURATION</p><h1>Admin settings</h1></div><a class="btn secondary" href="{{ url_for('dashboard') }}">← Back to dashboard</a></header>
+      <section class="settings-intro"><h2>Resource thresholds</h2><p class="muted">Set the minimum acceptable level for each resource in each building. An email alert is generated when a reading falls below its threshold.</p></section>
+      <section class="panel settings-panel">
+        <div class="panel-heading"><div><h2>Minimum level configuration</h2><p class="muted">Changes are saved in the SQLite database.</p></div></div>
+        <div class="table-scroll">
+          <table><thead><tr><th>Building</th><th>Resource</th><th>Minimum threshold</th><th>Unit</th><th></th></tr></thead><tbody id="limits-table"><tr><td colspan="5">Loading settings…</td></tr></tbody></table>
+        </div>
+      </section>
+      <section class="panel email-info">
+        <div class="email-symbol">✉</div><div><h3>Email notification setup</h3><p class="muted">To send real emails, configure SMTP environment variables as described in README.md. Until then, alerts are saved in the database and printed in the terminal.</p></div>
+      </section>
+      <footer>ResourceFlow · Administrator configuration</footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+  <script src="{{ url_for('static', filename='js/settings.js') }}"></script>
+</body>
+</html>

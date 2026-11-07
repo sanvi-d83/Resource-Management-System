@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign in | ResourceFlow</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-card">
+    <div class="brand-mark">RF</div>
+    <p class="eyebrow">BUILDING RESOURCE MANAGEMENT</p>
+    <h1>Welcome back</h1>
+    <p class="muted">Sign in to monitor your building resources.</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="notice error">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    <form method="post" class="login-form">
+      <label>Username<input name="username" autocomplete="username" required placeholder="Enter username"></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required placeholder="Enter password"></label>
+      <button class="btn primary full" type="submit">Sign in <span>→</span></button>
+    </form>
+    <p class="login-hint">Demo credentials: <strong>admin</strong> / <strong>admin123</strong></p>
+  </main>
+</body>
+</html>
