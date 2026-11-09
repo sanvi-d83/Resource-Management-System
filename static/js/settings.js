@@ -50,4 +50,55 @@ async function saveLimit(buildingId, resource) {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => loadLimits().catch(e => showToast(e.message, true)));
+async function saveAdminEmail(event) {
+  event.preventDefault();
+  const input = document.getElementById("admin-email");
+  try {
+    const result = await api("/api/admin-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: input.value })
+    });
+    showToast(result.message);
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadLimits().catch(e => showToast(e.message, true));
+  const emailForm = document.getElementById("admin-email-form");
+  if (emailForm) emailForm.addEventListener("submit", saveAdminEmail);
+  const smtpForm = document.getElementById("smtp-settings-form");
+  if (smtpForm) smtpForm.addEventListener("submit", saveSmtpSettings);
+  loadSmtpSettings().catch(e => showToast(e.message, true));
+});
+
+
+async function loadSmtpSettings() {
+  const result = await api("/api/smtp-settings");
+  const senderInput = document.getElementById("sender-email");
+  const status = document.getElementById("smtp-config-status");
+  if (senderInput) senderInput.value = result.sender_email || "";
+  if (status) status.textContent = result.configured
+    ? "Sender account configured. App Password is stored privately."
+    : "Sender account is not configured yet.";
+}
+
+async function saveSmtpSettings(event) {
+  event.preventDefault();
+  const sender_email = document.getElementById("sender-email").value;
+  const app_password = document.getElementById("app-password").value;
+  try {
+    const result = await api("/api/smtp-settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sender_email, app_password })
+    });
+    document.getElementById("app-password").value = "";
+    showToast(result.message);
+    await loadSmtpSettings();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+}

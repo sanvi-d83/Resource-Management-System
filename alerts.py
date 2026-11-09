@@ -3,39 +3,21 @@ import smtplib
 from email.message import EmailMessage
 
 
-def send_low_resource_email(building_name, building_id, resource, current_value, threshold, unit):
-    """Send an alert if SMTP settings are configured; otherwise report demo mode."""
-    smtp_host = os.environ.get("SMTP_HOST")
+def _send_message(recipient, subject, body):
+    smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     smtp_port = int(os.environ.get("SMTP_PORT", "587"))
     smtp_user = os.environ.get("SMTP_USER")
     smtp_password = os.environ.get("SMTP_PASSWORD")
     sender = os.environ.get("ALERT_FROM") or smtp_user
-    recipient = os.environ.get("ALERT_TO")
 
     if not all([smtp_host, smtp_user, smtp_password, sender, recipient]):
-        print(
-            f"[EMAIL NOT SENT - SMTP NOT CONFIGURED] {resource} low in "
-            f"{building_name} ({building_id}): {current_value} {unit}; "
-            f"threshold {threshold} {unit}"
-        )
-        return "SMTP not configured (logged to console)"
+        return "Email not sent: configure sender Gmail and App Password in Admin Settings."
 
     msg = EmailMessage()
-    msg["Subject"] = f"Low {resource} Alert - {building_name}"
+    msg["Subject"] = subject
     msg["From"] = sender
     msg["To"] = recipient
-    msg.set_content(
-        f"""Resource Management System Alert
-
-Building: {building_name} ({building_id})
-Resource: {resource}
-Current level: {current_value} {unit}
-Admin minimum limit: {threshold} {unit}
-
-The current resource level is below the configured minimum.
-Please investigate and take appropriate action.
-"""
-    )
+    msg.set_content(body)
 
     try:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as server:
@@ -46,3 +28,33 @@ Please investigate and take appropriate action.
     except Exception as exc:
         print(f"[EMAIL ERROR] {exc}")
         return f"Email failed: {exc}"
+
+
+def send_low_resource_summary_email(recipient, alerts):
+    count = len(alerts)
+
+    body = f"""Resource Management System
+Low Resource Alert Summary
+
+There {"is" if count == 1 else "are"} {count} new low-resource alert{"s" if count != 1 else ""}.
+
+"""
+
+    for index, alert in enumerate(alerts, start=1):
+        body += f"""Alert {index}
+Building: {alert['building_name']} ({alert['building_id']})
+Resource: {alert['resource']}
+Current level: {alert['current_value']:g} {alert['unit']}
+Admin minimum limit: {alert['threshold']:g} {alert['unit']}
+
+"""
+
+    body += """Please investigate these low-resource alerts.
+
+This email groups alerts generated during one monitoring cycle.
+"""
+
+    subject = f"ResourceFlow - {count} Low Resource Alert{'s' if count != 1 else ''}"
+
+    return _send_message(recipient, subject, body)
+

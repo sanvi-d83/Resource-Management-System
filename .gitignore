@@ -1,6 +1,13 @@
+# Environment and secrets
+.env
+
+# Python
+venv/
 __pycache__/
 *.py[cod]
-.venv/
-venv/
+
+# Local database
 resource_management.db
-.env
+
+# Backup files
+*_backup.py

@@ -28,7 +28,28 @@
         </div>
       </section>
       <section class="panel email-info">
-        <div class="email-symbol">✉</div><div><h3>Email notification setup</h3><p class="muted">To send real emails, configure SMTP environment variables as described in README.md. Until then, alerts are saved in the database and printed in the terminal.</p></div>
+        <div class="email-symbol">✉</div>
+        <div class="email-settings-content">
+          <h3>Email notification settings</h3>
+          <p class="muted">Set the administrator who receives alerts, then configure the Gmail account that sends them. The sender App Password is saved only in a private local .env file and is never displayed again.</p>
+
+          <form id="admin-email-form">
+            <label for="admin-email">Admin recipient email address</label>
+            <input id="admin-email" name="email" type="email" value="{{ admin_email }}" placeholder="admin@example.com" required>
+            <button class="btn primary" type="submit">Save recipient address</button>
+          </form>
+
+          <hr>
+          <form id="smtp-settings-form">
+            <label for="sender-email">Sender Gmail address</label>
+            <input id="sender-email" name="sender_email" type="email" placeholder="your-sender@gmail.com" autocomplete="username" required>
+            <label for="app-password">Google App Password</label>
+            <input id="app-password" name="app_password" type="password" placeholder="16-character App Password" autocomplete="new-password" required>
+            <button class="btn primary" type="submit">Save sender settings</button>
+          </form>
+          <p id="smtp-config-status" class="muted email-note">Checking sender configuration…</p>
+          <p class="muted email-note">Use a Google App Password, not your normal Gmail password. Do not share it. The .env file must remain excluded from GitHub.</p>
+        </div>
       </section>
       <footer>ResourceFlow · Administrator configuration</footer>
     </main>

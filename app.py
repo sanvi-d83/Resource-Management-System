@@ -1,17 +1,61 @@
 import os
 import random
+import re
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from alerts import send_low_resource_email
+from alerts import send_low_resource_summary_email
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATABASE = os.path.join(BASE_DIR, "resource_management.db")
+ENV_FILE = os.path.join(BASE_DIR, ".env")
+
+
+def load_private_env():
+    """Load local SMTP settings from a private .env file without extra packages."""
+    if not os.path.exists(ENV_FILE):
+        return
+    with open(ENV_FILE, "r", encoding="utf-8") as env_file:
+        for line in env_file:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+def save_private_env(values):
+    """Persist SMTP settings locally; never send secrets back to the browser."""
+    current = {}
+    if os.path.exists(ENV_FILE):
+        with open(ENV_FILE, "r", encoding="utf-8") as env_file:
+            for line in env_file:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    current[key.strip()] = value.strip().strip('"').strip("'")
+    current.update(values)
+    content = "\n".join(f'{key}="{value}"' for key, value in current.items()) + "\n"
+    temp_file = ENV_FILE + ".tmp"
+    with open(temp_file, "w", encoding="utf-8") as env_file:
+        env_file.write(content)
+    os.replace(temp_file, ENV_FILE)
+    try:
+        os.chmod(ENV_FILE, 0o600)
+    except OSError:
+        pass
+    os.environ.update(values)
+
+
+load_private_env()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "change-this-secret-key-for-local-development")
@@ -81,6 +125,10 @@ def init_db():
             created_at TEXT NOT NULL,
             FOREIGN KEY(building_id) REFERENCES buildings(id)
         );
+        CREATE TABLE IF NOT EXISTS app_settings (
+            setting_key TEXT PRIMARY KEY,
+            setting_value TEXT NOT NULL
+        );
         """)
         for building_id, name in BUILDINGS:
             conn.execute(
@@ -129,44 +177,46 @@ def latest_reading(conn, building_id, resource):
     ).fetchone()
 
 
-def maybe_create_alert(conn, building_id, resource, value, threshold):
-    # Create an alert only when the resource is below its limit.
-    if value >= threshold:
+def maybe_create_alert(conn, building_id, resource, previous_value, value, threshold):
+    # Create an alert only when the resource crosses from normal to low.
+    if previous_value < threshold or value >= threshold:
         return None
 
-    # Avoid creating repeated alerts for every polling cycle.
-    previous = conn.execute(
-        """SELECT id FROM alerts
-           WHERE building_id=? AND resource=?
-             AND created_at >= ? ORDER BY id DESC LIMIT 1""",
-        (building_id, resource, (datetime.now() - timedelta(minutes=15)).isoformat(timespec="seconds")),
+    building = conn.execute(
+        "SELECT name FROM buildings WHERE id=?", (building_id,)
     ).fetchone()
-    if previous:
-        return None
 
-    building = conn.execute("SELECT name FROM buildings WHERE id=?", (building_id,)).fetchone()
     message = (
         f"{resource} level is below the admin-defined limit in {building['name']} "
         f"({building_id}). Current: {value:g}; minimum: {threshold:g}."
     )
-    email_status = send_low_resource_email(
-        building_name=building["name"],
-        building_id=building_id,
-        resource=resource,
-        current_value=value,
-        threshold=threshold,
-        unit=RESOURCE_CONFIG[resource]["unit"],
-    )
-    conn.execute(
+
+    cursor = conn.execute(
         """INSERT INTO alerts
            (building_id, resource, current_value, threshold, message, email_status, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
-            building_id, resource, value, threshold, message,
-            email_status, datetime.now().isoformat(timespec="seconds")
+            building_id,
+            resource,
+            value,
+            threshold,
+            message,
+            "Pending email notification",
+            datetime.now().isoformat(timespec="seconds"),
         ),
     )
-    return {"message": message, "email_status": email_status}
+
+    return {
+        "id": cursor.lastrowid,
+        "message": message,
+        "building_name": building["name"],
+        "building_id": building_id,
+        "resource": resource,
+        "current_value": value,
+        "threshold": threshold,
+        "unit": RESOURCE_CONFIG[resource]["unit"],
+        "email_status": "Pending email notification",
+    }
 
 
 @app.route("/")
@@ -206,8 +256,69 @@ def dashboard():
 @app.route("/settings")
 @login_required
 def settings():
-    return render_template("settings.html")
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT setting_value FROM app_settings WHERE setting_key='admin_email'"
+        ).fetchone()
+    admin_email = row["setting_value"] if row else ""
+    return render_template("settings.html", admin_email=admin_email)
 
+
+@app.get("/api/admin-email")
+@login_required
+def api_get_admin_email():
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT setting_value FROM app_settings WHERE setting_key='admin_email'"
+        ).fetchone()
+    return jsonify({"email": row["setting_value"] if row else ""})
+
+
+@app.post("/api/admin-email")
+@login_required
+def api_save_admin_email():
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip()
+    if email and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        return jsonify({"error": "Please enter a valid email address."}), 400
+    with get_db() as conn:
+        conn.execute(
+            """INSERT INTO app_settings(setting_key, setting_value)
+               VALUES ('admin_email', ?)
+               ON CONFLICT(setting_key)
+               DO UPDATE SET setting_value=excluded.setting_value""",
+            (email,),
+        )
+    return jsonify({"success": True, "message": "Admin email saved successfully."})
+
+
+@app.get("/api/smtp-settings")
+@login_required
+def api_get_smtp_settings():
+    return jsonify({
+        "sender_email": os.environ.get("SMTP_USER", ""),
+        "configured": bool(os.environ.get("SMTP_USER") and os.environ.get("SMTP_PASSWORD")),
+    })
+
+
+@app.post("/api/smtp-settings")
+@login_required
+def api_save_smtp_settings():
+    data = request.get_json(silent=True) or {}
+    sender_email = (data.get("sender_email") or "").strip()
+    app_password = (data.get("app_password") or "").replace(" ", "").strip()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", sender_email):
+        return jsonify({"error": "Enter a valid sender Gmail address."}), 400
+    if len(app_password) != 16 or not app_password.isalnum():
+        return jsonify({"error": "Enter the 16-character Google App Password (spaces are optional)."}), 400
+    save_private_env({
+        "SMTP_HOST": "smtp.gmail.com",
+        "SMTP_PORT": "587",
+        "SMTP_USER": sender_email,
+        "SMTP_PASSWORD": app_password,
+        "ALERT_FROM": sender_email,
+    })
+    return jsonify({"success": True, "message": "Sender email settings saved securely on this computer."})
 
 @app.get("/api/overview")
 @login_required
@@ -236,51 +347,96 @@ def api_overview():
             result.append({"id": building["id"], "name": building["name"], "resources": resources})
     return jsonify(result)
 
-
 @app.post("/api/simulate")
 @login_required
 def api_simulate():
-    """Generate one simulated reading per building/resource and save it."""
+    """Generate readings and send one summary email per simulation cycle."""
+
     new_alerts = []
+    admin_email = ""
+
     with get_db() as conn:
         buildings = conn.execute("SELECT id FROM buildings").fetchall()
+
         for building in buildings:
             for resource, config in RESOURCE_CONFIG.items():
                 previous = latest_reading(conn, building["id"], resource)
                 old_value = previous["value"] if previous else config["capacity"] * 0.7
 
-                # Simulate gradual changes with occasional low-level events.
                 if resource == "Water":
                     change = random.uniform(-420, 180)
                     value = old_value + change
+
                     if random.random() < 0.07:
                         value -= random.uniform(1200, 2500)
+
                     value = max(0, min(config["capacity"], value))
+
                 else:
-                    # Electricity is represented as remaining available supply in this demo.
                     change = random.uniform(-45, 28)
                     value = old_value + change
+
                     if random.random() < 0.07:
                         value -= random.uniform(100, 220)
+
                     value = max(0, min(config["capacity"], value))
 
                 value = round(value, 2)
                 now = datetime.now().isoformat(timespec="seconds")
+
                 conn.execute(
                     """INSERT INTO resource_readings
                        (building_id, resource, value, recorded_at)
                        VALUES (?, ?, ?, ?)""",
                     (building["id"], resource, value, now),
                 )
+
                 limit_row = conn.execute(
-                    "SELECT threshold FROM resource_limits WHERE building_id=? AND resource=?",
+                    """SELECT threshold FROM resource_limits
+                       WHERE building_id=? AND resource=?""",
                     (building["id"], resource),
                 ).fetchone()
+
                 threshold = limit_row["threshold"] if limit_row else config["default_threshold"]
-                alert = maybe_create_alert(conn, building["id"], resource, value, threshold)
+
+                alert = maybe_create_alert(
+                    conn, building["id"], resource, old_value, value, threshold
+                )
+
                 if alert:
                     new_alerts.append(alert)
-    return jsonify({"success": True, "new_alerts": new_alerts})
+
+        email_setting = conn.execute(
+            "SELECT setting_value FROM app_settings WHERE setting_key='admin_email'"
+        ).fetchone()
+
+        admin_email = email_setting["setting_value"] if email_setting else ""
+
+    # Send one email after all buildings and resources have been checked.
+    if new_alerts:
+        if admin_email:
+            email_status = send_low_resource_summary_email(
+                recipient=admin_email,
+                alerts=new_alerts,
+            )
+        else:
+            email_status = "Email not sent: save the admin recipient email in Admin Settings."
+
+        # Update the email status of every alert included in the summary.
+        with get_db() as conn:
+            for alert in new_alerts:
+                conn.execute(
+                    "UPDATE alerts SET email_status=? WHERE id=?",
+                    (email_status, alert["id"]),
+                )
+
+        for alert in new_alerts:
+            alert["email_status"] = email_status
+
+    return jsonify({
+        "success": True,
+        "new_alerts": new_alerts
+    })
 
 
 @app.get("/api/history")
